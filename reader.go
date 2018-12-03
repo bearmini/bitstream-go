@@ -456,10 +456,12 @@ func (r *Reader) ReadNBits(nBits uint8, opt *ReadOptions) ([]byte, error) {
 		tempByte = tempByte | b1
 		result = append(result, tempByte)
 
-		if padOne {
-			b2 = b2 | (0xff >> tempBit)
+		if nBits > (8 - tempBit) {
+			if padOne {
+				b2 = b2 | (0xff >> tempBit)
+			}
+			result = append(result, b2)
 		}
-		result = append(result, b2)
 	} else {
 		if tempBit > 0 {
 			result = append(result, tempByte)
