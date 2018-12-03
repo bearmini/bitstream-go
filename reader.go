@@ -177,6 +177,10 @@ func (r *Reader) ReadNBitsAsUint8(nBits uint8) (uint8, error) {
 	return (b1 << nBits2) | b2, nil
 }
 
+func (r *Reader) ReadUint8() (uint8, error) {
+	return r.ReadNBitsAsUint8(8)
+}
+
 func (r *Reader) ReadNBitsAsUint16BE(nBits uint8) (uint16, error) {
 	if nBits == 0 {
 		return 0, nil
@@ -217,6 +221,10 @@ func (r *Reader) ReadNBitsAsUint16BE(nBits uint8) (uint16, error) {
 	}
 
 	return (uint16(b1) << (nBits2 + nBits3)) | (uint16(b2) << nBits3) | uint16(b3), nil
+}
+
+func (r *Reader) ReadUint16BE() (uint16, error) {
+	return r.ReadNBitsAsUint16BE(16)
 }
 
 func (r *Reader) ReadNBitsAsUint32BE(nBits uint8) (uint32, error) {
@@ -273,6 +281,10 @@ func (r *Reader) ReadNBitsAsUint32BE(nBits uint8) (uint32, error) {
 	}
 
 	return (uint32(b1) << (nBits2 + nBits3 + nBits4 + nBits5)) | (uint32(b2) << (nBits3 + nBits4 + nBits5)) | (uint32(b3) << (nBits4 + nBits5)) | (uint32(b4) << (nBits5)) | uint32(b5), nil
+}
+
+func (r *Reader) ReadUint32BE() (uint32, error) {
+	return r.ReadNBitsAsUint32BE(32)
 }
 
 func (r *Reader) ReadNBitsAsUint64BE(nBits uint8) (uint64, error) {
@@ -365,6 +377,10 @@ func (r *Reader) ReadNBitsAsUint64BE(nBits uint8) (uint64, error) {
 		(uint64(b7) << (nBits8 + nBits9)) |
 		(uint64(b8) << (nBits9)) |
 		uint64(b9), nil
+}
+
+func (r *Reader) ReadUint64BE() (uint64, error) {
+	return r.ReadNBitsAsUint64BE(64)
 }
 
 type ReadOptions struct {
