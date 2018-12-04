@@ -481,6 +481,87 @@ func BenchmarkRead32BitsAsUint32BE(b *testing.B) {
 	benchmarkReadNBitsAsUint32BE(b, 32)
 }
 
+func TestReadNBitsAsInt32BE(t *testing.T) {
+	testData := []struct {
+		Name     string
+		Data     []byte
+		Start    indecies
+		NBits    uint8
+		Expected int32
+	}{
+		{
+			Name:     "pattern 1",                          // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010
+			Start:    indecies{BitIndex: 6, ByteIndex: 0},  //   ^
+			NBits:    4,                                    //   ^^^ ^
+			Expected: 2,                                    //   001 0 => 2
+		},
+		{
+			Name:     "pattern 2",                          // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010
+			Start:    indecies{BitIndex: 4, ByteIndex: 0},  //     ^
+			NBits:    8,                                    //     ^ ^^^^   ^^^
+			Expected: -111,                                 //     1 0010   001 => 0x91 => -(^0x11[7bit] + 1) => -(0x6E + 1) => -111
+		},
+		{
+			Name:     "pattern 3",                          // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010
+			Start:    indecies{BitIndex: 4, ByteIndex: 0},  //     ^
+			NBits:    9,                                    //     ^ ^^^^   ^^^^
+			Expected: -221,                                 //     1 0010   0011 => 0x123 => -(^0x23[8bit] + 1) => -(0xDC + 1) => -221
+		},
+		{
+			Name:     "pattern 4",                          // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010
+			Start:    indecies{BitIndex: 4, ByteIndex: 0},  //     ^
+			NBits:    17,                                   //     ^ ^^^^   ^^^^ ^^^^   ^^^^
+			Expected: -56507,                               //     1 0010   0011 0100   0101 => 0x12345 => -(^0x2345[16bit] + 1) => -(0xDCBA + 1) => -56507
+		},
+		{
+			Name:     "pattern 5",                          // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010
+			Start:    indecies{BitIndex: 1, ByteIndex: 0},  //         ^
+			NBits:    24,                                   //         ^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^
+			Expected: -7531106,                             //         10   0011 0100   0101 0110   0111 10 => 1000 1101 0001 0101 1001 1110 => 0x8D159E => -(^0x0D159E[23bit] + 1) => -(0x72EA61 + 1) => -7531106
+		},
+		{
+			Name:     "pattern 6",                          // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010
+			Start:    indecies{BitIndex: 4, ByteIndex: 0},  //     ^
+			NBits:    32,                                   //     ^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^
+			Expected: -1851608124,                          //     1 0010   0011 0100   0101 0110   0111 1000   100 => 1001 0001 1010 0010 1011 0011 1100 0100 => 0x91A2B3C4 => -(^0x11A2B3C4[31bit] + 1) => -(0x6E5D4C3B + 1) => -1851608124
+		},
+		{
+			Name:     "pattern 6",                          // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:     []byte{0x12, 0xB4, 0x56, 0x78, 0x9a}, //  0001 0010 | 1011 0100 | 0101 0110 | 0111 1000 | 1001 1010
+			Start:    indecies{BitIndex: 7, ByteIndex: 1},  //              ^
+			NBits:    32,                                   //              ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^
+			Expected: -1269401446,                          //              1011 0100   0101 0110   0111 1000   1001 1010 => 0xB456789A => -(^0x3456789A + 1) => -(0x4BA98765 + 1) => -6666666666
+		},
+	}
+
+	for _, data := range testData {
+		data := data // capture
+		t.Run(data.Name, func(t *testing.T) {
+			//t.Parallel()
+
+			r := NewReader(bytes.NewReader(data.Data), nil)
+			r.fillBuf()
+			r.currBitIndex = data.Start.BitIndex
+			r.currByteIndex = data.Start.ByteIndex
+
+			v, err := r.ReadNBitsAsInt32BE(data.NBits)
+			if err != nil {
+				t.Fatalf("unexpected error: %+v\n", err)
+			}
+			if data.Expected != v {
+				t.Fatalf("\nExpected: %+v\nActual:   %+v\n", data.Expected, v)
+			}
+
+		})
+	}
+}
+
 func TestReadNBitsAsUint64BE(t *testing.T) {
 	testData := []struct {
 		Name     string

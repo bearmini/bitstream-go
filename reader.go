@@ -283,6 +283,26 @@ func (r *Reader) ReadNBitsAsUint32BE(nBits uint8) (uint32, error) {
 	return (uint32(b1) << (nBits2 + nBits3 + nBits4 + nBits5)) | (uint32(b2) << (nBits3 + nBits4 + nBits5)) | (uint32(b3) << (nBits4 + nBits5)) | (uint32(b4) << (nBits5)) | uint32(b5), nil
 }
 
+func (r *Reader) ReadNBitsAsInt32BE(nBits uint8) (int32, error) {
+	v, err := r.ReadNBitsAsUint32BE(nBits)
+	if err != nil {
+		return 0, err
+	}
+
+	//fmt.Printf("v   == %#08x\n", v)
+	msb := uint32(1) << (nBits - 1)
+	//fmt.Printf("msb == %#08x\n", msb)
+
+	if (v & msb) != 0 {
+		f := 0xffffffff & ^(msb - 1)
+		//fmt.Printf("f   ==%#08x\n", f)
+		//fmt.Printf("f|v ==%#08x\n", f|v)
+		return int32(f | v), nil
+	}
+
+	return int32(v), nil
+}
+
 func (r *Reader) ReadUint32BE() (uint32, error) {
 	return r.ReadNBitsAsUint32BE(32)
 }
