@@ -86,22 +86,6 @@ func (r *Reader) fillBufIfNeeded() error {
 	return r.fillBuf()
 }
 
-// ex. startBitIndex = 5, nBits = 3
-// b7 b6 b5 b4 b3 b2 b1 b0
-//  0  0  1  1  1  0  0  0
-func (r *Reader) getBitMaskByte(startBitIndex, nBits uint8) (byte, error) {
-	if (7-startBitIndex)+nBits > 8 {
-		return 0, errors.New("unable to create mask")
-	}
-	mask := uint8(0)
-	for i := uint8(0); i < nBits; i++ {
-		b := uint8(1 << (startBitIndex - i))
-		mask = mask | b
-	}
-
-	return mask, nil
-}
-
 func (r *Reader) forwardIndecies(nBits uint8) {
 	if nBits <= r.currBitIndex {
 		r.currBitIndex -= nBits
@@ -125,12 +109,8 @@ func (r *Reader) ReadBit() (byte, error) {
 	}
 
 	b := r.buf[r.currByteIndex]
-	bm, err := r.getBitMaskByte(r.currBitIndex, 1)
-	if err != nil {
-		return 0, err
-	}
-
-	result := (b & bm) >> r.currBitIndex
+	mask := uint8(1 << r.currBitIndex)
+	result := (b & mask) >> r.currBitIndex
 	r.forwardIndecies(1)
 	return result, nil
 }
@@ -145,12 +125,8 @@ func (r *Reader) mustReadNBitsInCurrentByte(nBits uint8) byte {
 	}
 
 	b := r.buf[r.currByteIndex]
-	bm, err := r.getBitMaskByte(r.currBitIndex, nBits)
-	if err != nil {
-		panic(fmt.Sprintf("%+v", err))
-	}
-
-	result := (b & bm) >> (r.currBitIndex - (nBits - 1))
+	mask := uint8((1 << (r.currBitIndex + 1)) - 1)
+	result := (b & mask) >> (r.currBitIndex - (nBits - 1))
 	r.forwardIndecies(nBits)
 	return result
 }
@@ -161,6 +137,10 @@ func (r *Reader) mustReadNBitsInCurrentByte(nBits uint8) byte {
 func (r *Reader) ReadNBitsAsUint8(nBits uint8) (uint8, error) {
 	if nBits == 0 {
 		return 0, nil
+	}
+
+	if nBits > 8 {
+		return 0, errors.New("nBits too large for uint8")
 	}
 
 	err := r.fillBufIfNeeded()
@@ -326,18 +306,14 @@ func (r *Reader) ReadNBitsAsInt32BE(nBits uint8) (int32, error) {
 	msb := uint32(1) << (nBits - 1)
 	//fmt.Printf("msb == %#08x\n", msb)
 
-	if (v & msb) != 0 {
-		f := 0xffffffff & ^(msb - 1)
-		//fmt.Printf("f   ==%#08x\n", f)
-		//fmt.Printf("f|v ==%#08x\n", f|v)
-		return int32(f | v), nil
+	if (v & msb) == 0 {
+		return int32(v), nil
 	}
 
-	return int32(v), nil
-}
-
-func (r *Reader) ReadUint32BE() (uint32, error) {
-	return r.ReadNBitsAsUint32BE(32)
+	f := 0xffffffff & ^(msb - 1)
+	//fmt.Printf("f   ==%#08x\n", f)
+	//fmt.Printf("f|v ==%#08x\n", f|v)
+	return int32(f | v), nil
 }
 
 // ReadNBitsAsUint64BE reads `nBits` bits as a big endian unsigned integer from the bit stream and returns it in uint64 (LSB aligned).
@@ -531,7 +507,7 @@ func (r *Reader) ReadNBits(nBits uint8, opt *ReadOptions) ([]byte, error) {
 	}
 
 	if alignRight {
-
+		return nil, errors.New("not implemented yet")
 	}
 
 	return result, nil
