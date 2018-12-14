@@ -43,6 +43,16 @@ func (w *Writer) WriteBit(bit uint8) error {
 	return w.Flush()
 }
 
+// WriteBool writes a single bit to the bit stream.
+// Write 1 if b is `true`, 0 otherwise.
+func (w *Writer) WriteBool(b bool) error {
+	if b {
+		return w.WriteBit(1)
+	} else {
+		return w.WriteBit(0)
+	}
+}
+
 // WriteNBitsOfUint8 writes `nBits` bits to the bit stream.
 // `nBits` must be less than or equal to 8, otherwise returns an error.
 //
