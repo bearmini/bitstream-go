@@ -44,7 +44,9 @@ func (w *Writer) WriteBit(bit uint8) error {
 }
 
 // WriteNBitsOfUint8 writes `nBits` bits to the bit stream.
-// Uses n bits from `val`'s LSB
+// `nBits` must be less than or equal to 8, otherwise returns an error.
+//
+// This function uses n bits from `val`'s LSB.
 // i.e.)
 //   if you have the following status of bit stream before calling WriteNBitsOfUint8,
 //   currByte: 0101xxxxb
@@ -57,6 +59,14 @@ func (w *Writer) WriteBit(bit uint8) error {
 //   currByte: 0101010xb (0101xxxxb | xxxx010xb)
 //   currBitIndex: 0
 func (w *Writer) WriteNBitsOfUint8(nBits, val uint8) error {
+	if nBits == 0 {
+		return nil
+	}
+
+	if nBits > 8 {
+		return errors.New("nBits too large for uint8")
+	}
+
 	// wb: bits can be written in currByte
 	wb := w.currBitIndex + 1
 
@@ -75,16 +85,181 @@ func (w *Writer) WriteNBitsOfUint8(nBits, val uint8) error {
 	b2 := val << (8 - (nBits - wb)) // part 2: should be written in the next byte (MSB aligned)
 	b1Mask := uint8((1 << (w.currBitIndex + 1)) - 1)
 	w.currByte[0] |= (b1 & b1Mask)
-	w.Flush()
+	err := w.Flush()
+	if err != nil {
+		return err
+	}
 	w.currByte[0] = b2
 	w.currBitIndex = 7 - (nBits - wb)
 
 	return nil
 }
 
-// WriteUint8 writes a uint8 value to the stream.
+// WriteUint8 writes a uint8 value to the bit stream.
 func (w *Writer) WriteUint8(val uint8) error {
 	return w.WriteNBitsOfUint8(8, val)
+}
+
+// WriteNBitsOfUint16 writes `nBits` bits to the bit stream.
+// `nBits` must be less than or equal to 16, otherwise returns an error.
+func (w *Writer) WriteNBitsOfUint16(nBits uint8, val uint16) error {
+	if nBits == 0 {
+		return nil
+	}
+
+	if nBits <= 8 {
+		return w.WriteNBitsOfUint8(nBits, uint8(val))
+	}
+
+	if nBits > 16 {
+		return errors.New("nBits too large for uint16")
+	}
+
+	// wb: bits can be written in currByte
+	wb := w.currBitIndex + 1
+
+	// 16 bits may be distributed in 3 bytes
+	b1Bits := wb
+	b2Bits := uint8(nBits - b1Bits)
+	b3Bits := uint8(0)
+	if b2Bits > 8 {
+		b3Bits = b2Bits - 8
+		b2Bits = 8
+	}
+
+	b1Mask := uint16(((1 << b1Bits) - 1) << (b2Bits + b3Bits))
+	b2Mask := uint16(((1 << b2Bits) - 1) << b3Bits)
+	b3Mask := uint16((1 << b3Bits) - 1)
+
+	b1 := uint8((val & b1Mask) >> (b2Bits + b3Bits))
+	b2 := uint8(((val & b2Mask) >> b3Bits) << (8 - b2Bits)) // left aligned
+	b3 := uint8((val & b3Mask) << (8 - b3Bits))             // left aligned
+
+	w.currByte[0] |= b1
+	err := w.Flush()
+	if err != nil {
+		return err
+	}
+
+	if b3Bits == 0 {
+		w.currByte[0] = b2
+		if b2Bits == 8 {
+			return w.Flush()
+		}
+		w.currBitIndex = 7 - b2Bits
+		return nil
+	}
+
+	w.currByte[0] = b2
+	err = w.Flush()
+	if err != nil {
+		return err
+	}
+	w.currByte[0] = b3
+	w.currBitIndex = 7 - b3Bits
+
+	return nil
+}
+
+// WriteUint16 writes a uint16 value to the bit stream.
+func (w *Writer) WriteUint16(val uint16) error {
+	return w.WriteNBitsOfUint16(16, val)
+}
+
+// WriteNBitsOfUint32 writes `nBits` bits to the bit stream.
+// `nBits` must be less than or equal to 32, otherwise returns an error.
+func (w *Writer) WriteNBitsOfUint32(nBits uint8, val uint32) error {
+	if nBits == 0 {
+		return nil
+	}
+
+	if nBits <= 16 {
+		return w.WriteNBitsOfUint16(nBits, uint16(val))
+	}
+
+	if nBits > 32 {
+		return errors.New("nBits too large for uint32")
+	}
+
+	// wb: bits can be written in currByte
+	wb := w.currBitIndex + 1
+
+	// 32 bits may be distributed in 5 bytes
+	b1Bits := wb
+	b2Bits := uint8(8)
+	b3Bits := uint8(nBits - 8 - wb)
+	b4Bits := uint8(0)
+	b5Bits := uint8(0)
+	if b3Bits > 8 {
+		b4Bits = b3Bits - 8
+		if b4Bits > 8 {
+			b5Bits = b4Bits - 8
+			b4Bits = 8
+		}
+		b3Bits = 8
+	}
+
+	b1Mask := uint32(((1 << b1Bits) - 1) << (b2Bits + b3Bits + b4Bits + b5Bits))
+	b2Mask := uint32(((1 << b2Bits) - 1) << (b3Bits + b4Bits + b5Bits))
+	b3Mask := uint32(((1 << b3Bits) - 1) << (b4Bits + b5Bits))
+	b4Mask := uint32(((1 << b4Bits) - 1) << b5Bits)
+	b5Mask := uint32((1 << b5Bits) - 1)
+
+	b1 := uint8((val & b1Mask) >> (b2Bits + b3Bits + b4Bits + b5Bits))
+	b2 := uint8(((val & b2Mask) >> (b3Bits + b4Bits + b5Bits)) << (8 - b2Bits)) // left aligned
+	b3 := uint8(((val & b3Mask) >> (b4Bits + b5Bits)) << (8 - b3Bits))          // left aligned
+	b4 := uint8(((val & b4Mask) >> b5Bits) << (8 - b4Bits))                     // left aligned
+	b5 := uint8((val & b5Mask) << (8 - b5Bits))                                 // left aligned
+
+	w.currByte[0] |= b1
+	err := w.Flush()
+	if err != nil {
+		return err
+	}
+
+	w.currByte[0] = b2
+	err = w.Flush()
+	if err != nil {
+		return err
+	}
+
+	w.currByte[0] = b3
+	if b3Bits == 8 {
+		err = w.Flush()
+		if err != nil {
+			return err
+		}
+	}
+	if b4Bits == 0 {
+		if b3Bits != 8 {
+			w.currBitIndex = 7 - b3Bits
+		}
+		return nil
+	}
+
+	w.currByte[0] = b4
+	if b4Bits == 8 {
+		err = w.Flush()
+		if err != nil {
+			return err
+		}
+	}
+	if b5Bits == 0 {
+		if b4Bits != 8 {
+			w.currBitIndex = 7 - b4Bits
+		}
+		return nil
+	}
+
+	w.currByte[0] = b5
+	w.currBitIndex = 7 - b5Bits
+
+	return nil
+}
+
+// WriteUint32 writes a uint32 value to the bit stream.
+func (w *Writer) WriteUint32(val uint32) error {
+	return w.WriteNBitsOfUint32(32, val)
 }
 
 // Flush ensures the bufferred bits (bits not writen to the stream because it has less than 8 bits) to the destination writer.
@@ -101,4 +276,8 @@ func (w *Writer) Flush() error {
 	w.currBitIndex = 7
 
 	return nil
+}
+
+func hex(x uint32) string {
+	return fmt.Sprintf("%#08x", x)
 }
