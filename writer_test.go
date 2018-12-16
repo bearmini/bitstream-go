@@ -416,3 +416,120 @@ func BenchmarkWrite31BitsOfUint32(b *testing.B) {
 func BenchmarkWrite32BitsOfUint32(b *testing.B) {
 	benchmarkWriteNBitsOfUint32(32, b)
 }
+
+func TestWriteNBits(t *testing.T) {
+	testData := []struct {
+		Name     string
+		NBits    uint8
+		Value    []byte
+		Start    writerStatus
+		Expected writerStatus
+	}{
+		{
+			Name:     "pattern 1",
+			NBits:    1,
+			Value:    []byte{0xff}, // 1
+			Start:    writerStatus{currByte: 0x00, currBitIndex: 7, buf: []byte{}},
+			Expected: writerStatus{currByte: 0x80, currBitIndex: 6, buf: []byte{}},
+		},
+		{
+			Name:     "pattern 2",
+			NBits:    16,
+			Value:    []byte{0xab, 0xcd},                                                     //        10 1010 1111 0011 01
+			Start:    writerStatus{currByte: 0x88, currBitIndex: 1, buf: []byte{}},           // 1000 10xx
+			Expected: writerStatus{currByte: 0x34, currBitIndex: 1, buf: []byte{0x8a, 0xaf}}, // 1000 1010 1010 1111 0011 01xx
+		},
+		{
+			Name:     "pattern 3",
+			NBits:    17,
+			Value:    []byte{0xab, 0xcd, 0xef},                                               //        10 1010 1111 0011 011
+			Start:    writerStatus{currByte: 0x88, currBitIndex: 1, buf: []byte{}},           // 1000 10xx
+			Expected: writerStatus{currByte: 0x36, currBitIndex: 0, buf: []byte{0x8a, 0xaf}}, // 1000 1010 1010 1111 0011 011x
+		},
+		{
+			Name:     "pattern 4",
+			NBits:    24,
+			Value:    []byte{0xab, 0xcd, 0xef, 0xff},                                               // 1010 1011 1100 1101 1110 1111
+			Start:    writerStatus{currByte: 0x00, currBitIndex: 7, buf: []byte{}},                 // xxxx xxxx
+			Expected: writerStatus{currByte: 0x00, currBitIndex: 7, buf: []byte{0xab, 0xcd, 0xef}}, // 1010 1011 1100 1101 1110 1111
+		},
+		{
+			Name:     "pattern 5",
+			NBits:    24,
+			Value:    []byte{0xab, 0xcd, 0xef, 0xff},                                               //      1010 1011 1100 1101 1110 1111
+			Start:    writerStatus{currByte: 0xf0, currBitIndex: 3, buf: []byte{}},                 // 1111 xxxx
+			Expected: writerStatus{currByte: 0xf0, currBitIndex: 3, buf: []byte{0xfa, 0xbc, 0xde}}, // 1111 1010 1011 1100 1101 1110 1111 xxxx
+		},
+		{
+			Name:     "pattern 6",
+			NBits:    24,
+			Value:    []byte{0xab, 0xcd, 0xef, 0xff},                                               //        10 1010 1111 0011 0111 1011 11
+			Start:    writerStatus{currByte: 0xfc, currBitIndex: 1, buf: []byte{}},                 // 1111 11xx
+			Expected: writerStatus{currByte: 0xbc, currBitIndex: 1, buf: []byte{0xfe, 0xaf, 0x37}}, // 1111 1110 1010 1111 0011 0111 1011 11xx
+		},
+		{
+			Name:     "pattern 7",
+			NBits:    31,
+			Value:    []byte{0x89, 0xab, 0xcd, 0xef},                                               // 1000 1001 1010 1011 1100 1101 1110 111
+			Start:    writerStatus{currByte: 0x00, currBitIndex: 7, buf: []byte{}},                 // xxxx xxxx
+			Expected: writerStatus{currByte: 0xee, currBitIndex: 0, buf: []byte{0x89, 0xab, 0xcd}}, // 1000 1001 1010 1011 1100 1101 1110 111x
+		},
+		{
+			Name:     "pattern 8",
+			NBits:    31,
+			Value:    []byte{0x89, 0xab, 0xcd, 0xef},                                                     //  100 0100 1101 0101 1110 0110 1111 0111
+			Start:    writerStatus{currByte: 0x80, currBitIndex: 6, buf: []byte{}},                       // 1xxx xxxx
+			Expected: writerStatus{currByte: 0x00, currBitIndex: 7, buf: []byte{0xc4, 0xd5, 0xe6, 0xf7}}, // 1100 0100 1101 0101 1110 0110 1111 0111 xxxx xxxx
+		},
+		{
+			Name:     "pattern 9",
+			NBits:    31,
+			Value:    []byte{0x89, 0xab, 0xcd, 0xef},                                                     //   10 0010 0110 1010 1111 0011 0111 1011 1
+			Start:    writerStatus{currByte: 0xc0, currBitIndex: 5, buf: []byte{}},                       // 11xx xxxx
+			Expected: writerStatus{currByte: 0x80, currBitIndex: 6, buf: []byte{0xe2, 0x6a, 0xf3, 0x7b}}, // 1110 0010 0110 1010 1111 0011 0111 1011 1xxx xxxx
+		},
+		{
+			Name:     "pattern 10",
+			NBits:    32,
+			Value:    []byte{0x89, 0xab, 0xcd, 0xef},                                                     // 1000 1001 1010 1011 1100 1101 1110 1111
+			Start:    writerStatus{currByte: 0x00, currBitIndex: 7, buf: []byte{}},                       // xxxx xxxx
+			Expected: writerStatus{currByte: 0x00, currBitIndex: 7, buf: []byte{0x89, 0xab, 0xcd, 0xef}}, // 1000 1001 1010 1011 1100 1101 1110 1111 xxxx xxxx
+		},
+		{
+			Name:     "pattern 11",
+			NBits:    32,
+			Value:    []byte{0x89, 0xab, 0xcd, 0xef},                                                     //  100 0100 1101 0101 1110 0110 1111 0111 1
+			Start:    writerStatus{currByte: 0x80, currBitIndex: 6, buf: []byte{}},                       // 1xxx xxxx
+			Expected: writerStatus{currByte: 0x80, currBitIndex: 6, buf: []byte{0xc4, 0xd5, 0xe6, 0xf7}}, // 1100 0100 1101 0101 1110 0110 1111 0111 1xxx xxxx
+		},
+	}
+
+	for _, data := range testData {
+		data := data // capture
+		t.Run(data.Name, func(t *testing.T) {
+			//t.Parallel()
+
+			buf := bytes.NewBuffer(data.Start.buf)
+			bw := NewWriter(buf)
+
+			bw.currByte[0] = data.Start.currByte
+			bw.currBitIndex = data.Start.currBitIndex
+
+			err := bw.WriteNBits(data.NBits, data.Value)
+			if err != nil {
+				t.Fatalf("unexpected error: %+v\n", err)
+			}
+			if data.Expected.currByte != bw.currByte[0] {
+				t.Fatalf("\nunexpected currByte\nExpected: %+v\nActual:   %+v\n", data.Expected.currByte, bw.currByte[0])
+			}
+			if data.Expected.currBitIndex != bw.currBitIndex {
+				t.Fatalf("\nunexpected currBitIndex\nExpected: %+v\nActual:   %+v\n", data.Expected.currBitIndex, bw.currBitIndex)
+			}
+			if !reflect.DeepEqual(data.Expected.buf, buf.Bytes()) {
+				t.Fatalf("\nunexpected flushed data\nExpected: %+v\nActual:   %+v\n", data.Expected.buf, buf.Bytes())
+			}
+
+		})
+	}
+
+}

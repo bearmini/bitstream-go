@@ -272,6 +272,41 @@ func (w *Writer) WriteUint32(val uint32) error {
 	return w.WriteNBitsOfUint32(32, val)
 }
 
+// WriteNBits writes specified number of bits of the bytes to the bit stream.
+func (w *Writer) WriteNBits(nBits uint8, data []byte) error {
+	if nBits == 0 {
+		return nil
+	}
+
+	for nBits > 8 {
+		if len(data) == 0 {
+			return errors.New("insufficient data")
+		}
+
+		b := data[0]
+		err := w.WriteNBitsOfUint8(8, b)
+		if err != nil {
+			return err
+		}
+		data = data[1:]
+		nBits -= 8
+	}
+
+	if nBits > 0 {
+		if len(data) == 0 {
+			return errors.New("insufficient data")
+		}
+		b := data[0]
+		b = b >> (8 - nBits)
+		err := w.WriteNBitsOfUint8(nBits, b)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // Flush ensures the bufferred bits (bits not writen to the stream because it has less than 8 bits) to the destination writer.
 func (w *Writer) Flush() error {
 	nWritten, err := w.dst.Write(w.currByte)
