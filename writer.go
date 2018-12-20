@@ -13,6 +13,7 @@ type Writer struct {
 	dst          io.Writer
 	currByte     []uint8
 	currBitIndex uint8 // MSB: 7, LSB: 0
+	writtenBits  uint
 }
 
 // NewWriter creates a new Writer instance.
@@ -21,11 +22,16 @@ func NewWriter(dst io.Writer) *Writer {
 		dst:          dst,
 		currByte:     []byte{0},
 		currBitIndex: 7,
+		writtenBits:  0,
 	}
 }
 
 func (w *Writer) dump() string {
 	return fmt.Sprintf("currByte: %02x, currBitIndex: %d", w.currByte[0], w.currBitIndex)
+}
+
+func (w *Writer) WrittenBits() uint {
+	return w.writtenBits
 }
 
 // WriteBit writes a single bit to the bit stream.
@@ -34,6 +40,7 @@ func (w *Writer) WriteBit(bit uint8) error {
 	if bit&0x01 != 0 {
 		w.currByte[0] |= ((bit & 0x01) << w.currBitIndex)
 	}
+	w.writtenBits++
 
 	if w.currBitIndex > 0 {
 		w.currBitIndex--
@@ -46,11 +53,12 @@ func (w *Writer) WriteBit(bit uint8) error {
 // WriteBool writes a single bit to the bit stream.
 // Write 1 if b is `true`, 0 otherwise.
 func (w *Writer) WriteBool(b bool) error {
+	bit := uint8(0)
 	if b {
-		return w.WriteBit(1)
-	} else {
-		return w.WriteBit(0)
+		bit = 1
 	}
+
+	return w.WriteBit(bit)
 }
 
 // WriteNBitsOfUint8 writes `nBits` bits to the bit stream.
@@ -69,6 +77,8 @@ func (w *Writer) WriteBool(b bool) error {
 //   currByte: 0101010xb (0101xxxxb | xxxx010xb)
 //   currBitIndex: 0
 func (w *Writer) WriteNBitsOfUint8(nBits, val uint8) error {
+	defer func() { w.writtenBits += uint(nBits) }()
+
 	if nBits == 0 {
 		return nil
 	}
@@ -124,6 +134,8 @@ func (w *Writer) WriteNBitsOfUint16(nBits uint8, val uint16) error {
 	if nBits > 16 {
 		return errors.New("nBits too large for uint16")
 	}
+
+	defer func() { w.writtenBits += uint(nBits) }()
 
 	// wb: bits can be written in currByte
 	wb := w.currBitIndex + 1
@@ -190,6 +202,8 @@ func (w *Writer) WriteNBitsOfUint32(nBits uint8, val uint32) error {
 	if nBits > 32 {
 		return errors.New("nBits too large for uint32")
 	}
+
+	defer func() { w.writtenBits += uint(nBits) }()
 
 	// wb: bits can be written in currByte
 	wb := w.currBitIndex + 1

@@ -33,6 +33,9 @@ func TestWriteBit(t *testing.T) {
 	if !reflect.DeepEqual(buf.Bytes(), expected) {
 		t.Fatalf("\nExpected: %+v\nActual:   %+v\n", expected, buf.Bytes())
 	}
+	if uint(16) != bw.WrittenBits() {
+		t.Fatalf("\nunexpected writtenBits\nExpected: %+v\nActual:   %+v\n", 16, bw.WrittenBits())
+	}
 }
 
 func BenchmarkWriteBit(b *testing.B) {
@@ -102,6 +105,9 @@ func TestWriteNBitsOfUint8(t *testing.T) {
 			err := bw.WriteNBitsOfUint8(data.NBits, data.Value)
 			if err != nil {
 				t.Fatalf("unexpected error: %+v\n", err)
+			}
+			if uint(data.NBits) != bw.WrittenBits() {
+				t.Fatalf("\nunexpected writtenBits\nExpected: %+v\nActual:   %+v\n", data.NBits, bw.WrittenBits())
 			}
 			if data.Expected.currByte != bw.currByte[0] {
 				t.Fatalf("\nunexpected currByte\nExpected: %+v\nActual:   %+v\n", data.Expected.currByte, bw.currByte[0])
@@ -218,6 +224,9 @@ func TestWriteNBitsOfUint16(t *testing.T) {
 			err := bw.WriteNBitsOfUint16(data.NBits, data.Value)
 			if err != nil {
 				t.Fatalf("unexpected error: %+v\n", err)
+			}
+			if uint(data.NBits) != bw.WrittenBits() {
+				t.Fatalf("\nunexpected writtenBits\nExpected: %+v\nActual:   %+v\n", data.NBits, bw.WrittenBits())
 			}
 			if data.Expected.currByte != bw.currByte[0] {
 				t.Fatalf("\nunexpected currByte\nExpected: %+v\nActual:   %+v\n", data.Expected.currByte, bw.currByte[0])
@@ -369,6 +378,9 @@ func TestWriteNBitsOfUint32(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %+v\n", err)
 			}
+			if uint(data.NBits) != bw.WrittenBits() {
+				t.Fatalf("\nunexpected writtenBits\nExpected: %+v\nActual:   %+v\n", data.NBits, bw.WrittenBits())
+			}
 			if data.Expected.currByte != bw.currByte[0] {
 				t.Fatalf("\nunexpected currByte\nExpected: %+v\nActual:   %+v\n", data.Expected.currByte, bw.currByte[0])
 			}
@@ -518,6 +530,9 @@ func TestWriteNBits(t *testing.T) {
 			err := bw.WriteNBits(data.NBits, data.Value)
 			if err != nil {
 				t.Fatalf("unexpected error: %+v\n", err)
+			}
+			if uint(data.NBits) != bw.WrittenBits() {
+				t.Fatalf("\nunexpected writtenBits\nExpected: %+v\nActual:   %+v\n", data.NBits, bw.WrittenBits())
 			}
 			if data.Expected.currByte != bw.currByte[0] {
 				t.Fatalf("\nunexpected currByte\nExpected: %+v\nActual:   %+v\n", data.Expected.currByte, bw.currByte[0])
