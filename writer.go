@@ -287,7 +287,7 @@ func (w *Writer) WriteUint32(val uint32) error {
 }
 
 // WriteNBits writes specified number of bits of the bytes to the bit stream.
-func (w *Writer) WriteNBits(nBits uint8, data []byte) error {
+func (w *Writer) WriteNBits(nBits uint, data []byte) error {
 	if nBits == 0 {
 		return nil
 	}
@@ -312,7 +312,7 @@ func (w *Writer) WriteNBits(nBits uint8, data []byte) error {
 		}
 		b := data[0]
 		b = b >> (8 - nBits)
-		err := w.WriteNBitsOfUint8(nBits, b)
+		err := w.WriteNBitsOfUint8(uint8(nBits), b)
 		if err != nil {
 			return err
 		}

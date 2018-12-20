@@ -432,7 +432,7 @@ func BenchmarkWrite32BitsOfUint32(b *testing.B) {
 func TestWriteNBits(t *testing.T) {
 	testData := []struct {
 		Name     string
-		NBits    uint8
+		NBits    uint
 		Value    []byte
 		Start    writerStatus
 		Expected writerStatus
@@ -531,7 +531,7 @@ func TestWriteNBits(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %+v\n", err)
 			}
-			if uint(data.NBits) != bw.WrittenBits() {
+			if data.NBits != bw.WrittenBits() {
 				t.Fatalf("\nunexpected writtenBits\nExpected: %+v\nActual:   %+v\n", data.NBits, bw.WrittenBits())
 			}
 			if data.Expected.currByte != bw.currByte[0] {
