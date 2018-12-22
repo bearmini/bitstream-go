@@ -122,7 +122,7 @@ func (w *Writer) WriteUint8(val uint8) error {
 
 // WriteNBitsOfUint16 writes `nBits` bits to the bit stream.
 // `nBits` must be less than or equal to 16, otherwise returns an error.
-func (w *Writer) WriteNBitsOfUint16(nBits uint8, val uint16) error {
+func (w *Writer) WriteNBitsOfUint16BE(nBits uint8, val uint16) error {
 	if nBits == 0 {
 		return nil
 	}
@@ -184,19 +184,19 @@ func (w *Writer) WriteNBitsOfUint16(nBits uint8, val uint16) error {
 }
 
 // WriteUint16 writes a uint16 value to the bit stream.
-func (w *Writer) WriteUint16(val uint16) error {
-	return w.WriteNBitsOfUint16(16, val)
+func (w *Writer) WriteUint16BE(val uint16) error {
+	return w.WriteNBitsOfUint16BE(16, val)
 }
 
 // WriteNBitsOfUint32 writes `nBits` bits to the bit stream.
 // `nBits` must be less than or equal to 32, otherwise returns an error.
-func (w *Writer) WriteNBitsOfUint32(nBits uint8, val uint32) error {
+func (w *Writer) WriteNBitsOfUint32BE(nBits uint8, val uint32) error {
 	if nBits == 0 {
 		return nil
 	}
 
 	if nBits <= 16 {
-		return w.WriteNBitsOfUint16(nBits, uint16(val))
+		return w.WriteNBitsOfUint16BE(nBits, uint16(val))
 	}
 
 	if nBits > 32 {
@@ -282,8 +282,8 @@ func (w *Writer) WriteNBitsOfUint32(nBits uint8, val uint32) error {
 }
 
 // WriteUint32 writes a uint32 value to the bit stream.
-func (w *Writer) WriteUint32(val uint32) error {
-	return w.WriteNBitsOfUint32(32, val)
+func (w *Writer) WriteUint32BE(val uint32) error {
+	return w.WriteNBitsOfUint32BE(32, val)
 }
 
 // WriteNBits writes specified number of bits of the bytes to the bit stream.
@@ -335,8 +335,4 @@ func (w *Writer) Flush() error {
 	w.currBitIndex = 7
 
 	return nil
-}
-
-func hex(x uint32) string {
-	return fmt.Sprintf("%#08x", x)
 }

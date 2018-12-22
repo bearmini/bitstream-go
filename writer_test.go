@@ -165,7 +165,7 @@ func BenchmarkWrite8BitsOfUint8(b *testing.B) {
 	benchmarkWriteNBitsOfUint8(8, b)
 }
 
-func TestWriteNBitsOfUint16(t *testing.T) {
+func TestWriteNBitsOfUint16BE(t *testing.T) {
 	testData := []struct {
 		Name     string
 		NBits    uint8
@@ -221,7 +221,7 @@ func TestWriteNBitsOfUint16(t *testing.T) {
 			bw.currByte[0] = data.Start.currByte
 			bw.currBitIndex = data.Start.currBitIndex
 
-			err := bw.WriteNBitsOfUint16(data.NBits, data.Value)
+			err := bw.WriteNBitsOfUint16BE(data.NBits, data.Value)
 			if err != nil {
 				t.Fatalf("unexpected error: %+v\n", err)
 			}
@@ -243,40 +243,40 @@ func TestWriteNBitsOfUint16(t *testing.T) {
 
 }
 
-func benchmarkWriteNBitsOfUint16(nBits uint8, b *testing.B) {
+func benchmarkWriteNBitsOfUint16BE(nBits uint8, b *testing.B) {
 	rand.Seed(time.Now().UnixNano())
 	buf := bytes.NewBuffer([]byte{})
 	bw := NewWriter(buf)
 	for n := 0; n < b.N; n++ {
-		_ = bw.WriteNBitsOfUint16(nBits, uint16(rand.Intn(65536)))
+		_ = bw.WriteNBitsOfUint16BE(nBits, uint16(rand.Intn(65536)))
 	}
 }
 
-func BenchmarkWrite1BitsOfUint16(b *testing.B) {
-	benchmarkWriteNBitsOfUint16(1, b)
+func BenchmarkWrite1BitsOfUint16BE(b *testing.B) {
+	benchmarkWriteNBitsOfUint16BE(1, b)
 }
 
-func BenchmarkWrite2BitsOfUint16(b *testing.B) {
-	benchmarkWriteNBitsOfUint16(2, b)
+func BenchmarkWrite2BitsOfUint16BE(b *testing.B) {
+	benchmarkWriteNBitsOfUint16BE(2, b)
 }
 
-func BenchmarkWrite9BitsOfUint16(b *testing.B) {
-	benchmarkWriteNBitsOfUint16(9, b)
+func BenchmarkWrite9BitsOfUint16BE(b *testing.B) {
+	benchmarkWriteNBitsOfUint16BE(9, b)
 }
 
-func BenchmarkWrite10BitsOfUint16(b *testing.B) {
-	benchmarkWriteNBitsOfUint16(10, b)
+func BenchmarkWrite10BitsOfUint16BE(b *testing.B) {
+	benchmarkWriteNBitsOfUint16BE(10, b)
 }
 
-func BenchmarkWrite15BitsOfUint16(b *testing.B) {
-	benchmarkWriteNBitsOfUint16(15, b)
+func BenchmarkWrite15BitsOfUint16BE(b *testing.B) {
+	benchmarkWriteNBitsOfUint16BE(15, b)
 }
 
-func BenchmarkWrite16BitsOfUint16(b *testing.B) {
-	benchmarkWriteNBitsOfUint16(16, b)
+func BenchmarkWrite16BitsOfUint16BE(b *testing.B) {
+	benchmarkWriteNBitsOfUint16BE(16, b)
 }
 
-func TestWriteNBitsOfUint32(t *testing.T) {
+func TestWriteNBitsOfUint32BE(t *testing.T) {
 	testData := []struct {
 		Name     string
 		NBits    uint8
@@ -374,7 +374,7 @@ func TestWriteNBitsOfUint32(t *testing.T) {
 			bw.currByte[0] = data.Start.currByte
 			bw.currBitIndex = data.Start.currBitIndex
 
-			err := bw.WriteNBitsOfUint32(data.NBits, data.Value)
+			err := bw.WriteNBitsOfUint32BE(data.NBits, data.Value)
 			if err != nil {
 				t.Fatalf("unexpected error: %+v\n", err)
 			}
@@ -396,37 +396,37 @@ func TestWriteNBitsOfUint32(t *testing.T) {
 
 }
 
-func benchmarkWriteNBitsOfUint32(nBits uint8, b *testing.B) {
+func benchmarkWriteNBitsOfUint32BE(nBits uint8, b *testing.B) {
 	rand.Seed(time.Now().UnixNano())
 	buf := bytes.NewBuffer([]byte{})
 	bw := NewWriter(buf)
 	for n := 0; n < b.N; n++ {
-		_ = bw.WriteNBitsOfUint32(nBits, uint32(rand.Uint32()))
+		_ = bw.WriteNBitsOfUint32BE(nBits, uint32(rand.Uint32()))
 	}
 }
 
-func BenchmarkWrite1BitsOfUint32(b *testing.B) {
-	benchmarkWriteNBitsOfUint32(1, b)
+func BenchmarkWrite1BitsOfUint32BE(b *testing.B) {
+	benchmarkWriteNBitsOfUint32BE(1, b)
 }
 
-func BenchmarkWrite16BitsOfUint32(b *testing.B) {
-	benchmarkWriteNBitsOfUint32(16, b)
+func BenchmarkWrite16BitsOfUint32BE(b *testing.B) {
+	benchmarkWriteNBitsOfUint32BE(16, b)
 }
 
-func BenchmarkWrite17BitsOfUint32(b *testing.B) {
-	benchmarkWriteNBitsOfUint32(17, b)
+func BenchmarkWrite17BitsOfUint32BE(b *testing.B) {
+	benchmarkWriteNBitsOfUint32BE(17, b)
 }
 
-func BenchmarkWrite23BitsOfUint32(b *testing.B) {
-	benchmarkWriteNBitsOfUint32(23, b)
+func BenchmarkWrite23BitsOfUint32BE(b *testing.B) {
+	benchmarkWriteNBitsOfUint32BE(23, b)
 }
 
-func BenchmarkWrite31BitsOfUint32(b *testing.B) {
-	benchmarkWriteNBitsOfUint32(31, b)
+func BenchmarkWrite31BitsOfUint32BE(b *testing.B) {
+	benchmarkWriteNBitsOfUint32BE(31, b)
 }
 
-func BenchmarkWrite32BitsOfUint32(b *testing.B) {
-	benchmarkWriteNBitsOfUint32(32, b)
+func BenchmarkWrite32BitsOfUint32BE(b *testing.B) {
+	benchmarkWriteNBitsOfUint32BE(32, b)
 }
 
 func TestWriteNBits(t *testing.T) {
