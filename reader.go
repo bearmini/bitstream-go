@@ -17,9 +17,10 @@ type Reader struct {
 	src           io.Reader
 	srcEOF        bool
 	buf           []byte
-	bufLen        int
-	currByteIndex int   // starts from 0
+	bufLen        uint
+	currByteIndex uint  // starts from 0
 	currBitIndex  uint8 // MSB: 7, LSB: 0
+	consumedBytes uint
 	opt           *ReaderOptions
 }
 
@@ -73,7 +74,7 @@ func (r *Reader) fillBuf() error {
 	}
 
 	r.buf = buf
-	r.bufLen = n
+	r.bufLen = uint(n)
 	r.currByteIndex = 0
 	r.currBitIndex = 7
 	return nil
@@ -93,11 +94,20 @@ func (r *Reader) forwardIndecies(nBits uint8) {
 	}
 
 	nBits = nBits - r.currBitIndex
-	nBytes := int(nBits/8) + 1
+	nBytes := uint(nBits/8) + 1
 	r.currByteIndex += nBytes
+	r.consumedBytes += nBytes
 
 	bitsToGo := (nBits % 8)
 	r.currBitIndex = 8 - bitsToGo
+}
+
+// ConsumedBytes returns a number of bytes that has been consumed.
+func (r *Reader) ConsumedBytes() uint {
+	if r.currBitIndex != 7 {
+		return r.consumedBytes + 1
+	}
+	return r.consumedBytes
 }
 
 // ReadBit reads a single bit from the bit stream.

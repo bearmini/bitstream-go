@@ -9,7 +9,7 @@ import (
 
 type indecies struct {
 	BitIndex  uint8
-	ByteIndex int
+	ByteIndex uint
 }
 
 func TestForwardIndecies(t *testing.T) {
@@ -88,19 +88,28 @@ func TestForwardIndecies(t *testing.T) {
 
 func TestReadBit(t *testing.T) {
 	testData := []struct {
-		Name         string
-		Data         []byte
-		ExpectedBits []byte
+		Name                  string
+		Data                  []byte
+		ExpectedBits          []byte
+		ExpectedConsumedBytes uint
 	}{
 		{
-			Name:         "pattern 1",
-			Data:         []byte{0xaa},
-			ExpectedBits: []byte{1, 0, 1, 0, 1, 0, 1, 0},
+			Name:                  "pattern 1",
+			Data:                  []byte{0xaa},
+			ExpectedBits:          []byte{1, 0, 1, 0, 1, 0, 1, 0},
+			ExpectedConsumedBytes: 1,
 		},
 		{
-			Name:         "pattern 2",
-			Data:         []byte{0x55, 0x12},
-			ExpectedBits: []byte{0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0},
+			Name:                  "pattern 2",
+			Data:                  []byte{0x55, 0x12},
+			ExpectedBits:          []byte{0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0},
+			ExpectedConsumedBytes: 2,
+		},
+		{
+			Name:                  "pattern 3",
+			Data:                  []byte{0x55, 0x12},
+			ExpectedBits:          []byte{0, 1, 0, 1, 0, 1, 0, 1, 0}, // reads only 9 bits
+			ExpectedConsumedBytes: 2,
 		},
 	}
 
@@ -120,9 +129,15 @@ func TestReadBit(t *testing.T) {
 				}
 			}
 
-			_, err := r.ReadBit()
-			if err == nil {
-				t.Fatal("error should occur but no error\n")
+			if data.ExpectedConsumedBytes != r.ConsumedBytes() {
+				t.Fatalf("\nExpected consumed bytes: %d\nActual consumed bytes:   %d\n", data.ExpectedConsumedBytes, r.ConsumedBytes())
+			}
+
+			if len(data.ExpectedBits)%8 == 0 {
+				_, err := r.ReadBit()
+				if err == nil {
+					t.Fatal("error should occur but no error\n")
+				}
 			}
 		})
 	}
@@ -145,60 +160,68 @@ func BenchmarkReadBit(b *testing.B) {
 
 func TestReadNBitsAsUint8(t *testing.T) {
 	testData := []struct {
-		Name     string
-		Data     []byte
-		Start    indecies
-		NBits    uint8
-		Expected uint8
+		Name                  string
+		Data                  []byte
+		Start                 indecies
+		NBits                 uint8
+		Expected              uint8
+		ExpectedConsumedBytes uint
 	}{
 		{
-			Name:     "pattern 1",                         // b7654 3210
-			Data:     []byte{0x12},                        //  0001 0010
-			Start:    indecies{BitIndex: 6, ByteIndex: 0}, //   ^
-			NBits:    4,                                   //   ^^^ ^
-			Expected: 2,                                   //   001 0 => 2
+			Name:                  "pattern 1",                         // b7654 3210
+			Data:                  []byte{0x12},                        //  0001 0010
+			Start:                 indecies{BitIndex: 6, ByteIndex: 0}, //   ^
+			NBits:                 4,                                   //   ^^^ ^
+			Expected:              2,                                   //   001 0 => 2
+			ExpectedConsumedBytes: 1,
 		},
 		{
-			Name:     "pattern 2",                         // b7654 3210
-			Data:     []byte{0x12},                        //  0001 0010
-			Start:    indecies{BitIndex: 7, ByteIndex: 0}, //  ^
-			NBits:    8,                                   //  ^^^^ ^^^^
-			Expected: 0x12,                                //  0001 0010 => 0x12
+			Name:                  "pattern 2",                         // b7654 3210
+			Data:                  []byte{0x12},                        //  0001 0010
+			Start:                 indecies{BitIndex: 7, ByteIndex: 0}, //  ^
+			NBits:                 8,                                   //  ^^^^ ^^^^
+			Expected:              0x12,                                //  0001 0010 => 0x12
+			ExpectedConsumedBytes: 1,
 		},
 		{
-			Name:     "pattern 3",                         // b7654 3210
-			Data:     []byte{0x12},                        //  0001 0010
-			Start:    indecies{BitIndex: 0, ByteIndex: 0}, //          ^
-			NBits:    1,                                   //          ^
-			Expected: 0,                                   //          0 => 0
+			Name:                  "pattern 3",                         // b7654 3210
+			Data:                  []byte{0x12},                        //  0001 0010
+			Start:                 indecies{BitIndex: 0, ByteIndex: 0}, //          ^
+			NBits:                 1,                                   //          ^
+			Expected:              0,                                   //          0 => 0
+			ExpectedConsumedBytes: 1,
 		},
 		{
-			Name:     "pattern 4",                         // b7654 3210 7654 3210
-			Data:     []byte{0x12, 0x34},                  //  0001 0010 0011 0100
-			Start:    indecies{BitIndex: 0, ByteIndex: 0}, //          ^
-			NBits:    6,                                   //          ^ ^^^^ ^
-			Expected: 6,                                   //          0 0011 0 => 6
+			Name:                  "pattern 4",                         // b7654 3210 7654 3210
+			Data:                  []byte{0x12, 0x34},                  //  0001 0010 0011 0100
+			Start:                 indecies{BitIndex: 0, ByteIndex: 0}, //          ^
+			NBits:                 6,                                   //          ^ ^^^^ ^
+			Expected:              6,                                   //          0 0011 0 => 6
+			ExpectedConsumedBytes: 2,
 		},
 		{
-			Name:     "pattern 5",                         // b7654 3210 7654 3210
-			Data:     []byte{0xff, 0xff},                  //  1111 1111 1111 1111
-			Start:    indecies{BitIndex: 3, ByteIndex: 0}, //       ^
-			NBits:    8,                                   //       ^^^^ ^^^^
-			Expected: 0xff,                                //       1111 1111 => 0xff
+			Name:                  "pattern 5",                         // b7654 3210 7654 3210
+			Data:                  []byte{0xff, 0xff},                  //  1111 1111 1111 1111
+			Start:                 indecies{BitIndex: 3, ByteIndex: 0}, //       ^
+			NBits:                 8,                                   //       ^^^^ ^^^^
+			Expected:              0xff,                                //       1111 1111 => 0xff
+			ExpectedConsumedBytes: 2,
 		},
 		{
-			Name:     "pattern 6",                         // b7654 3210 7654 3210
-			Data:     []byte{0xaa, 0x55},                  //  1010 1010 0101 0101
-			Start:    indecies{BitIndex: 2, ByteIndex: 0}, //        ^
-			NBits:    7,                                   //        ^^^ ^^^^
-			Expected: 0x25,                                //        010 0101 => 0x25
+			Name:                  "pattern 6",                         // b7654 3210 7654 3210
+			Data:                  []byte{0xaa, 0x55},                  //  1010 1010 0101 0101
+			Start:                 indecies{BitIndex: 2, ByteIndex: 0}, //        ^
+			NBits:                 7,                                   //        ^^^ ^^^^
+			Expected:              0x25,                                //        010 0101 => 0x25
+			ExpectedConsumedBytes: 2,
 		},
 		{
-			Name:     "pattern 7",                         // b7654 3210 7654 3210
-			Data:     []byte{0x98, 0xb1},                  //  1001 1000 1011 0001
-			Start:    indecies{BitIndex: 4, ByteIndex: 0}, //     ^
-			NBits:    7,                                   //     ^ ^^^^ ^^
-			Expected: 0x62,                                //     1 1000 10 => 110 0010 => 0x62
+			Name:                  "pattern 7",                         // b7654 3210 7654 3210
+			Data:                  []byte{0x98, 0xb1},                  //  1001 1000 1011 0001
+			Start:                 indecies{BitIndex: 4, ByteIndex: 0}, //     ^
+			NBits:                 7,                                   //     ^ ^^^^ ^^
+			Expected:              0x62,                                //     1 1000 10 => 110 0010 => 0x62
+			ExpectedConsumedBytes: 2,
 		},
 	}
 
@@ -219,7 +242,9 @@ func TestReadNBitsAsUint8(t *testing.T) {
 			if data.Expected != v {
 				t.Fatalf("\nExpected: %+v\nActual:   %+v\n", data.Expected, v)
 			}
-
+			if data.ExpectedConsumedBytes != r.ConsumedBytes() {
+				t.Fatalf("\nExpected consumed bytes: %d\nActual consumed bytes:   %d\n", data.ExpectedConsumedBytes, r.ConsumedBytes())
+			}
 		})
 	}
 }
@@ -267,39 +292,44 @@ func BenchmarkRead8BitsAsUint8(b *testing.B) {
 
 func TestReadNBitsAsUint16BE(t *testing.T) {
 	testData := []struct {
-		Name     string
-		Data     []byte
-		Start    indecies
-		NBits    uint8
-		Expected uint16
+		Name                  string
+		Data                  []byte
+		Start                 indecies
+		NBits                 uint8
+		Expected              uint16
+		ExpectedConsumedBytes uint
 	}{
 		{
-			Name:     "pattern 1",                         // b7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56},            //  0001 0010 | 0011 0100 | 0101 0110
-			Start:    indecies{BitIndex: 6, ByteIndex: 0}, //   ^
-			NBits:    4,                                   //   ^^^ ^
-			Expected: 2,                                   //   001 0 => 2
+			Name:                  "pattern 1",                         // b7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56},            //  0001 0010 | 0011 0100 | 0101 0110
+			Start:                 indecies{BitIndex: 6, ByteIndex: 0}, //   ^
+			NBits:                 4,                                   //   ^^^ ^
+			Expected:              2,                                   //   001 0 => 2
+			ExpectedConsumedBytes: 1,
 		},
 		{
-			Name:     "pattern 2",                         // b7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56},            //  0001 0010 | 0011 0100 | 0101 0110
-			Start:    indecies{BitIndex: 6, ByteIndex: 0}, //   ^
-			NBits:    9,                                   //   ^^^ ^^^^   ^^
-			Expected: 0x48,                                //   001 0010   00 => 0x48
+			Name:                  "pattern 2",                         // b7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56},            //  0001 0010 | 0011 0100 | 0101 0110
+			Start:                 indecies{BitIndex: 6, ByteIndex: 0}, //   ^
+			NBits:                 9,                                   //   ^^^ ^^^^   ^^
+			Expected:              0x48,                                //   001 0010   00 => 0x48
+			ExpectedConsumedBytes: 2,
 		},
 		{
-			Name:     "pattern 3",                         // b7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56},            //  0001 0010 | 0011 0100 | 0101 0110
-			Start:    indecies{BitIndex: 6, ByteIndex: 0}, //   ^
-			NBits:    16,                                  //   ^^^ ^^^^   ^^^^ ^^^^   ^
-			Expected: 0x2468,                              //   001 0010   0011 0100   0 => 0x2468
+			Name:                  "pattern 3",                         // b7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56},            //  0001 0010 | 0011 0100 | 0101 0110
+			Start:                 indecies{BitIndex: 6, ByteIndex: 0}, //   ^
+			NBits:                 16,                                  //   ^^^ ^^^^   ^^^^ ^^^^   ^
+			Expected:              0x2468,                              //   001 0010   0011 0100   0 => 0x2468
+			ExpectedConsumedBytes: 3,
 		},
 		{
-			Name:     "pattern 4",                         // b7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56},            //  0001 0010 | 0011 0100 | 0101 0110
-			Start:    indecies{BitIndex: 7, ByteIndex: 1}, //              ^
-			NBits:    16,                                  //              ^^^^ ^^^^   ^^^^ ^^^^
-			Expected: 0x3456,                              //              0011 0100   0101 0110   0 => 0x3456
+			Name:                  "pattern 4",                         // b7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56},            //  0001 0010 | 0011 0100 | 0101 0110
+			Start:                 indecies{BitIndex: 7, ByteIndex: 1}, //              ^
+			NBits:                 16,                                  //              ^^^^ ^^^^   ^^^^ ^^^^
+			Expected:              0x3456,                              //              0011 0100   0101 0110   0 => 0x3456
+			ExpectedConsumedBytes: 2,
 		},
 	}
 
@@ -320,7 +350,9 @@ func TestReadNBitsAsUint16BE(t *testing.T) {
 			if data.Expected != v {
 				t.Fatalf("\nExpected: %+v\nActual:   %+v\n", data.Expected, v)
 			}
-
+			if data.ExpectedConsumedBytes != r.ConsumedBytes() {
+				t.Fatalf("\nExpected consumed bytes: %d\nActual consumed bytes:   %d\n", data.ExpectedConsumedBytes, r.ConsumedBytes())
+			}
 		})
 	}
 }
@@ -376,53 +408,60 @@ func BenchmarkRead16BitsAsUint16BE(b *testing.B) {
 
 func TestReadNBitsAsUint32BE(t *testing.T) {
 	testData := []struct {
-		Name     string
-		Data     []byte
-		Start    indecies
-		NBits    uint8
-		Expected uint32
+		Name                  string
+		Data                  []byte
+		Start                 indecies
+		NBits                 uint8
+		Expected              uint32
+		ExpectedConsumedBytes uint
 	}{
 		{
-			Name:     "pattern 1",                          // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010
-			Start:    indecies{BitIndex: 6, ByteIndex: 0},  //   ^
-			NBits:    4,                                    //   ^^^ ^
-			Expected: 2,                                    //   001 0 => 2
+			Name:                  "pattern 1",                          // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56, 0x78, 0x9a}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010
+			Start:                 indecies{BitIndex: 6, ByteIndex: 0},  //   ^
+			NBits:                 4,                                    //   ^^^ ^
+			Expected:              2,                                    //   001 0 => 2
+			ExpectedConsumedBytes: 1,
 		},
 		{
-			Name:     "pattern 2",                          // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010
-			Start:    indecies{BitIndex: 6, ByteIndex: 0},  //   ^
-			NBits:    9,                                    //   ^^^ ^^^^   ^^
-			Expected: 0x48,                                 //   001 0010   00 => 0x48
+			Name:                  "pattern 2",                          // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56, 0x78, 0x9a}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010
+			Start:                 indecies{BitIndex: 6, ByteIndex: 0},  //   ^
+			NBits:                 9,                                    //   ^^^ ^^^^   ^^
+			Expected:              0x48,                                 //   001 0010   00 => 0x48
+			ExpectedConsumedBytes: 2,
 		},
 		{
-			Name:     "pattern 3",                          // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010
-			Start:    indecies{BitIndex: 6, ByteIndex: 0},  //   ^
-			NBits:    17,                                   //   ^^^ ^^^^   ^^^^ ^^^^   ^^
-			Expected: 0x48D1,                               //   001 0010   0011 0100   01 => 0x48D1
+			Name:                  "pattern 3",                          // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56, 0x78, 0x9a}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010
+			Start:                 indecies{BitIndex: 6, ByteIndex: 0},  //   ^
+			NBits:                 17,                                   //   ^^^ ^^^^   ^^^^ ^^^^   ^^
+			Expected:              0x48D1,                               //   001 0010   0011 0100   01 => 0x48D1
+			ExpectedConsumedBytes: 3,
 		},
 		{
-			Name:     "pattern 4",                          // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010
-			Start:    indecies{BitIndex: 6, ByteIndex: 0},  //   ^
-			NBits:    24,                                   //   ^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^
-			Expected: 0x2468AC,                             //   001 0010   0011 0100   0101 0110   0 => 0010 0100 0110 1000 1010 1100 => 0x2468AC
+			Name:                  "pattern 4",                          // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56, 0x78, 0x9a}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010
+			Start:                 indecies{BitIndex: 6, ByteIndex: 0},  //   ^
+			NBits:                 24,                                   //   ^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^
+			Expected:              0x2468AC,                             //   001 0010   0011 0100   0101 0110   0 => 0010 0100 0110 1000 1010 1100 => 0x2468AC
+			ExpectedConsumedBytes: 4,
 		},
 		{
-			Name:     "pattern 5",                          // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010
-			Start:    indecies{BitIndex: 6, ByteIndex: 0},  //   ^
-			NBits:    32,                                   //   ^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^
-			Expected: 0x2468ACF1,                           //   001 0010   0011 0100   0101 0110   0111 1000   1 => 0010 0100 0110 1000 1010 1100 1111 0001 => 0x2468ACF1
+			Name:                  "pattern 5",                          // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56, 0x78, 0x9a}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010
+			Start:                 indecies{BitIndex: 6, ByteIndex: 0},  //   ^
+			NBits:                 32,                                   //   ^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^
+			Expected:              0x2468ACF1,                           //   001 0010   0011 0100   0101 0110   0111 1000   1 => 0010 0100 0110 1000 1010 1100 1111 0001 => 0x2468ACF1
+			ExpectedConsumedBytes: 5,
 		},
 		{
-			Name:     "pattern 6",                          // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010
-			Start:    indecies{BitIndex: 7, ByteIndex: 1},  //              ^
-			NBits:    32,                                   //              ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^
-			Expected: 0x3456789A,                           //              0011 0100   0101 0110   0111 1000   1001 1010 => 0x3456789A
+			Name:                  "pattern 6",                          // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56, 0x78, 0x9a}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010
+			Start:                 indecies{BitIndex: 7, ByteIndex: 1},  //              ^
+			NBits:                 32,                                   //              ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^
+			Expected:              0x3456789A,                           //              0011 0100   0101 0110   0111 1000   1001 1010 => 0x3456789A
+			ExpectedConsumedBytes: 4,
 		},
 	}
 
@@ -443,7 +482,9 @@ func TestReadNBitsAsUint32BE(t *testing.T) {
 			if data.Expected != v {
 				t.Fatalf("\nExpected: %+v\nActual:   %+v\n", data.Expected, v)
 			}
-
+			if data.ExpectedConsumedBytes != r.ConsumedBytes() {
+				t.Fatalf("\nExpected consumed bytes: %d\nActual consumed bytes:   %d\n", data.ExpectedConsumedBytes, r.ConsumedBytes())
+			}
 		})
 	}
 }
@@ -490,67 +531,76 @@ func BenchmarkRead32BitsAsUint32BE(b *testing.B) {
 
 func TestReadNBitsAsInt32BE(t *testing.T) {
 	testData := []struct {
-		Name     string
-		Data     []byte
-		Start    indecies
-		NBits    uint8
-		Expected int32
+		Name                  string
+		Data                  []byte
+		Start                 indecies
+		NBits                 uint8
+		Expected              int32
+		ExpectedConsumedBytes uint
 	}{
 		{
-			Name:     "pattern 1",                          // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010
-			Start:    indecies{BitIndex: 6, ByteIndex: 0},  //   ^
-			NBits:    4,                                    //   ^^^ ^
-			Expected: 2,                                    //   001 0 => 2
+			Name:                  "pattern 1",                          // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56, 0x78, 0x9a}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010
+			Start:                 indecies{BitIndex: 6, ByteIndex: 0},  //   ^
+			NBits:                 4,                                    //   ^^^ ^
+			Expected:              2,                                    //   001 0 => 2
+			ExpectedConsumedBytes: 1,
 		},
 		{
-			Name:     "pattern 2",                          // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010
-			Start:    indecies{BitIndex: 4, ByteIndex: 0},  //     ^
-			NBits:    8,                                    //     ^ ^^^^   ^^^
-			Expected: -111,                                 //     1 0010   001 => 0x91 => -(^0x11[7bit] + 1) => -(0x6E + 1) => -111
+			Name:                  "pattern 2",                          // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56, 0x78, 0x9a}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010
+			Start:                 indecies{BitIndex: 4, ByteIndex: 0},  //     ^
+			NBits:                 8,                                    //     ^ ^^^^   ^^^
+			Expected:              -111,                                 //     1 0010   001 => 0x91 => -(^0x11[7bit] + 1) => -(0x6E + 1) => -111
+			ExpectedConsumedBytes: 2,
 		},
 		{
-			Name:     "pattern 3",                          // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010
-			Start:    indecies{BitIndex: 4, ByteIndex: 0},  //     ^
-			NBits:    9,                                    //     ^ ^^^^   ^^^^
-			Expected: -221,                                 //     1 0010   0011 => 0x123 => -(^0x23[8bit] + 1) => -(0xDC + 1) => -221
+			Name:                  "pattern 3",                          // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56, 0x78, 0x9a}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010
+			Start:                 indecies{BitIndex: 4, ByteIndex: 0},  //     ^
+			NBits:                 9,                                    //     ^ ^^^^   ^^^^
+			Expected:              -221,                                 //     1 0010   0011 => 0x123 => -(^0x23[8bit] + 1) => -(0xDC + 1) => -221
+			ExpectedConsumedBytes: 2,
 		},
 		{
-			Name:     "pattern 4",                          // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010
-			Start:    indecies{BitIndex: 4, ByteIndex: 0},  //     ^
-			NBits:    17,                                   //     ^ ^^^^   ^^^^ ^^^^   ^^^^
-			Expected: -56507,                               //     1 0010   0011 0100   0101 => 0x12345 => -(^0x2345[16bit] + 1) => -(0xDCBA + 1) => -56507
+			Name:                  "pattern 4",                          // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56, 0x78, 0x9a}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010
+			Start:                 indecies{BitIndex: 4, ByteIndex: 0},  //     ^
+			NBits:                 17,                                   //     ^ ^^^^   ^^^^ ^^^^   ^^^^
+			Expected:              -56507,                               //     1 0010   0011 0100   0101 => 0x12345 => -(^0x2345[16bit] + 1) => -(0xDCBA + 1) => -56507
+			ExpectedConsumedBytes: 3,
 		},
 		{
-			Name:     "pattern 5",                          // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010
-			Start:    indecies{BitIndex: 1, ByteIndex: 0},  //         ^
-			NBits:    24,                                   //         ^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^
-			Expected: -7531106,                             //         10   0011 0100   0101 0110   0111 10 => 1000 1101 0001 0101 1001 1110 => 0x8D159E => -(^0x0D159E[23bit] + 1) => -(0x72EA61 + 1) => -7531106
+			Name:                  "pattern 5",                          // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56, 0x78, 0x9a}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010
+			Start:                 indecies{BitIndex: 1, ByteIndex: 0},  //         ^
+			NBits:                 24,                                   //         ^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^
+			Expected:              -7531106,                             //         10   0011 0100   0101 0110   0111 10 => 1000 1101 0001 0101 1001 1110 => 0x8D159E => -(^0x0D159E[23bit] + 1) => -(0x72EA61 + 1) => -7531106
+			ExpectedConsumedBytes: 4,
 		},
 		{
-			Name:     "pattern 6",                          // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010
-			Start:    indecies{BitIndex: 4, ByteIndex: 0},  //     ^
-			NBits:    32,                                   //     ^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^
-			Expected: -1851608124,                          //     1 0010   0011 0100   0101 0110   0111 1000   100 => 1001 0001 1010 0010 1011 0011 1100 0100 => 0x91A2B3C4 => -(^0x11A2B3C4[31bit] + 1) => -(0x6E5D4C3B + 1) => -1851608124
+			Name:                  "pattern 6",                          // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56, 0x78, 0x9a}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010
+			Start:                 indecies{BitIndex: 4, ByteIndex: 0},  //     ^
+			NBits:                 32,                                   //     ^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^
+			Expected:              -1851608124,                          //     1 0010   0011 0100   0101 0110   0111 1000   100 => 1001 0001 1010 0010 1011 0011 1100 0100 => 0x91A2B3C4 => -(^0x11A2B3C4[31bit] + 1) => -(0x6E5D4C3B + 1) => -1851608124
+			ExpectedConsumedBytes: 5,
 		},
 		{
-			Name:     "pattern 7",                          // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0xB4, 0x56, 0x78, 0x9a}, //  0001 0010 | 1011 0100 | 0101 0110 | 0111 1000 | 1001 1010
-			Start:    indecies{BitIndex: 7, ByteIndex: 1},  //              ^
-			NBits:    32,                                   //              ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^
-			Expected: -1269401446,                          //              1011 0100   0101 0110   0111 1000   1001 1010 => 0xB456789A => -(^0x3456789A[31bit] + 1) => -(0x4BA98765 + 1) => -1269401446
+			Name:                  "pattern 7",                          // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0xB4, 0x56, 0x78, 0x9a}, //  0001 0010 | 1011 0100 | 0101 0110 | 0111 1000 | 1001 1010
+			Start:                 indecies{BitIndex: 7, ByteIndex: 1},  //              ^
+			NBits:                 32,                                   //              ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^
+			Expected:              -1269401446,                          //              1011 0100   0101 0110   0111 1000   1001 1010 => 0xB456789A => -(^0x3456789A[31bit] + 1) => -(0x4BA98765 + 1) => -1269401446
+			ExpectedConsumedBytes: 4,
 		},
 		{
-			Name:     "pattern 8",                          // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x38, 0xb6, 0x0b, 0x98, 0x9d}, //  0011 1000 | 1011 0110 | 0000 1011 | 1001 1000 | 1001 1101
-			Start:    indecies{BitIndex: 5, ByteIndex: 0},  //    ^
-			NBits:    24,                                   //    ^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^
-			Expected: -1910738,                             //    11 1000   1011 0110   0000 1011   10 => 1110 0010 1101 1000 0010 1110 => 0xE2D82E => -(^0x62D82E[23bit] + 1) => -(0x1D27D1 + 1) => -1910738
+			Name:                  "pattern 8",                          // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x38, 0xb6, 0x0b, 0x98, 0x9d}, //  0011 1000 | 1011 0110 | 0000 1011 | 1001 1000 | 1001 1101
+			Start:                 indecies{BitIndex: 5, ByteIndex: 0},  //    ^
+			NBits:                 24,                                   //    ^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^
+			Expected:              -1910738,                             //    11 1000   1011 0110   0000 1011   10 => 1110 0010 1101 1000 0010 1110 => 0xE2D82E => -(^0x62D82E[23bit] + 1) => -(0x1D27D1 + 1) => -1910738
+			ExpectedConsumedBytes: 4,
 		},
 	}
 
@@ -571,74 +621,85 @@ func TestReadNBitsAsInt32BE(t *testing.T) {
 			if data.Expected != v {
 				t.Fatalf("\nExpected: %+v\nActual:   %+v\n", data.Expected, v)
 			}
-
+			if data.ExpectedConsumedBytes != r.ConsumedBytes() {
+				t.Fatalf("\nExpected consumed bytes: %d\nActual consumed bytes:   %d\n", data.ExpectedConsumedBytes, r.ConsumedBytes())
+			}
 		})
 	}
 }
 
 func TestReadNBitsAsUint64BE(t *testing.T) {
 	testData := []struct {
-		Name     string
-		Data     []byte
-		Start    indecies
-		NBits    uint8
-		Expected uint64
+		Name                  string
+		Data                  []byte
+		Start                 indecies
+		NBits                 uint8
+		Expected              uint64
+		ExpectedConsumedBytes uint
 	}{
 		{
-			Name:     "pattern 1",                                                  // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
-			Start:    indecies{BitIndex: 6, ByteIndex: 0},                          //   ^
-			NBits:    4,                                                            //   ^^^ ^
-			Expected: 2,                                                            //   001 0 => 2
+			Name:                  "pattern 1",                                                  // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
+			Start:                 indecies{BitIndex: 6, ByteIndex: 0},                          //   ^
+			NBits:                 4,                                                            //   ^^^ ^
+			Expected:              2,                                                            //   001 0 => 2
+			ExpectedConsumedBytes: 1,
 		},
 		{
-			Name:     "pattern 2",                                                  // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
-			Start:    indecies{BitIndex: 6, ByteIndex: 0},                          //   ^
-			NBits:    9,                                                            //   ^^^ ^^^^   ^^
-			Expected: 0x48,                                                         //   001 0010   00 => 0x48
+			Name:                  "pattern 2",                                                  // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
+			Start:                 indecies{BitIndex: 6, ByteIndex: 0},                          //   ^
+			NBits:                 9,                                                            //   ^^^ ^^^^   ^^
+			Expected:              0x48,                                                         //   001 0010   00 => 0x48
+			ExpectedConsumedBytes: 2,
 		},
 		{
-			Name:     "pattern 3",                                                  // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
-			Start:    indecies{BitIndex: 6, ByteIndex: 0},                          //   ^
-			NBits:    17,                                                           //   ^^^ ^^^^   ^^^^ ^^^^   ^^
-			Expected: 0x48D1,                                                       //   001 0010   0011 0100   01 => 0x48D1
+			Name:                  "pattern 3",                                                  // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
+			Start:                 indecies{BitIndex: 6, ByteIndex: 0},                          //   ^
+			NBits:                 17,                                                           //   ^^^ ^^^^   ^^^^ ^^^^   ^^
+			Expected:              0x48D1,                                                       //   001 0010   0011 0100   01 => 0x48D1
+			ExpectedConsumedBytes: 3,
 		},
 		{
-			Name:     "pattern 4",                                                  // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
-			Start:    indecies{BitIndex: 6, ByteIndex: 0},                          //   ^
-			NBits:    33,                                                           //   ^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^
-			Expected: 0x48D159E2,                                                   //   001 0010   0011 0100   0101 0110   0111 1000   10 => 0 0100 1000 1101 0001 0101 1001 1110 0010 => 0x48D159E2
+			Name:                  "pattern 4",                                                  // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
+			Start:                 indecies{BitIndex: 6, ByteIndex: 0},                          //   ^
+			NBits:                 33,                                                           //   ^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^
+			Expected:              0x48D159E2,                                                   //   001 0010   0011 0100   0101 0110   0111 1000   10 => 0 0100 1000 1101 0001 0101 1001 1110 0010 => 0x48D159E2
+			ExpectedConsumedBytes: 5,
 		},
 		{
-			Name:     "pattern 5",                                                  // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
-			Start:    indecies{BitIndex: 6, ByteIndex: 0},                          //   ^
-			NBits:    42,                                                           //   ^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^
-			Expected: 0x91A2B3C4D5,                                                 //   001 0010   0011 0100   0101 0110   0111 1000   1001 1010   101 => 00 1001 0001 1010 0010 1011 0011 1100 0100 1101 0101 => 0x91A2B3C4D5
+			Name:                  "pattern 5",                                                  // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
+			Start:                 indecies{BitIndex: 6, ByteIndex: 0},                          //   ^
+			NBits:                 42,                                                           //   ^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^
+			Expected:              0x91A2B3C4D5,                                                 //   001 0010   0011 0100   0101 0110   0111 1000   1001 1010   101 => 00 1001 0001 1010 0010 1011 0011 1100 0100 1101 0101 => 0x91A2B3C4D5
+			ExpectedConsumedBytes: 6,
 		},
 		{
-			Name:     "pattern 6",                                                  // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
-			Start:    indecies{BitIndex: 6, ByteIndex: 0},                          //   ^
-			NBits:    51,                                                           //   ^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^
-			Expected: 0x123456789ABCD,                                              //   001 0010   0011 0100   0101 0110   0111 1000   1001 1010   1011 1100   1101 => 001 0010 0011 0100 0101 0110 0111 1000 1001 1010 1011 1100 1101 => 0x123456789ABCD
+			Name:                  "pattern 6",                                                  // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
+			Start:                 indecies{BitIndex: 6, ByteIndex: 0},                          //   ^
+			NBits:                 51,                                                           //   ^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^
+			Expected:              0x123456789ABCD,                                              //   001 0010   0011 0100   0101 0110   0111 1000   1001 1010   1011 1100   1101 => 001 0010 0011 0100 0101 0110 0111 1000 1001 1010 1011 1100 1101 => 0x123456789ABCD
+			ExpectedConsumedBytes: 7,
 		},
 		{
-			Name:     "pattern 7",                                                  // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
-			Start:    indecies{BitIndex: 6, ByteIndex: 0},                          //   ^
-			NBits:    60,                                                           //   ^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^
-			Expected: 0x2468ACF13579BDE,                                            //   001 0010   0011 0100   0101 0110   0111 1000   1001 1010   1011 1100   1101 1110   1111 0 => 0010 0100 0110 1000 1010 1100 1111 0001 0011 0101 0111 1001 1011 1101 1110 => 0x2468ACF13578BDE
+			Name:                  "pattern 7",                                                  // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
+			Start:                 indecies{BitIndex: 6, ByteIndex: 0},                          //   ^
+			NBits:                 60,                                                           //   ^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^
+			Expected:              0x2468ACF13579BDE,                                            //   001 0010   0011 0100   0101 0110   0111 1000   1001 1010   1011 1100   1101 1110   1111 0 => 0010 0100 0110 1000 1010 1100 1111 0001 0011 0101 0111 1001 1011 1101 1110 => 0x2468ACF13578BDE
+			ExpectedConsumedBytes: 8,
 		},
 		{
-			Name:     "pattern 6",                                                  // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
-			Start:    indecies{BitIndex: 7, ByteIndex: 1},                          //              ^
-			NBits:    64,                                                           //              ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^
-			Expected: 0x3456789ABCDEF012,                                           //              0011 0100   0101 0110   0111 1000   1001 1010   1011 1100   1101 1110   1111 0000   0001 0010 => 0x3456789ABCDEF012
+			Name:                  "pattern 6",                                                  // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
+			Start:                 indecies{BitIndex: 7, ByteIndex: 1},                          //              ^
+			NBits:                 64,                                                           //              ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^
+			Expected:              0x3456789ABCDEF012,                                           //              0011 0100   0101 0110   0111 1000   1001 1010   1011 1100   1101 1110   1111 0000   0001 0010 => 0x3456789ABCDEF012
+			ExpectedConsumedBytes: 8,
 		},
 	}
 
@@ -659,7 +720,9 @@ func TestReadNBitsAsUint64BE(t *testing.T) {
 			if data.Expected != v {
 				t.Fatalf("\nExpected: %+v\nActual:   %+v\n", data.Expected, v)
 			}
-
+			if data.ExpectedConsumedBytes != r.ConsumedBytes() {
+				t.Fatalf("\nExpected consumed bytes: %d\nActual consumed bytes:   %d\n", data.ExpectedConsumedBytes, r.ConsumedBytes())
+			}
 		})
 	}
 }
@@ -706,125 +769,142 @@ func BenchmarkRead64BitsAsUint64BE(b *testing.B) {
 
 func TestReadNBits(t *testing.T) {
 	testData := []struct {
-		Name       string
-		Data       []byte
-		Start      indecies
-		NBits      uint8
-		AlignRight bool
-		PadOne     bool
-		Expected   []byte
+		Name                  string
+		Data                  []byte
+		Start                 indecies
+		NBits                 uint8
+		AlignRight            bool
+		PadOne                bool
+		Expected              []byte
+		ExpectedConsumedBytes uint
 	}{
 		{
-			Name:     "pattern 1",                                                  // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
-			Start:    indecies{BitIndex: 6, ByteIndex: 0},                          //   ^
-			NBits:    4,                                                            //   ^^^ ^
-			Expected: []byte{0x20},                                                 //   001 0  => 0010 0000 => 0x20
+			Name:                  "pattern 1",                                                  // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
+			Start:                 indecies{BitIndex: 6, ByteIndex: 0},                          //   ^
+			NBits:                 4,                                                            //   ^^^ ^
+			Expected:              []byte{0x20},                                                 //   001 0  => 0010 0000 => 0x20
+			ExpectedConsumedBytes: 1,
 		},
 		{
-			Name:     "pattern 2",                                                  // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
-			Start:    indecies{BitIndex: 6, ByteIndex: 0},                          //   ^
-			NBits:    8,                                                            //   ^^^ ^^^^   ^
-			Expected: []byte{0x24},                                                 //   001 0010   0 => 00100100 => 0x24
+			Name:                  "pattern 2",                                                  // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
+			Start:                 indecies{BitIndex: 6, ByteIndex: 0},                          //   ^
+			NBits:                 8,                                                            //   ^^^ ^^^^   ^
+			Expected:              []byte{0x24},                                                 //   001 0010   0 => 00100100 => 0x24
+			ExpectedConsumedBytes: 2,
 		},
 		{
-			Name:     "pattern 3",                                                  // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
-			Start:    indecies{BitIndex: 6, ByteIndex: 0},                          //   ^
-			NBits:    9,                                                            //   ^^^ ^^^^   ^^
-			Expected: []byte{0x24, 0x00},                                           //   001 0010   00 => 00100100 0 => 0x24 0x00
+			Name:                  "pattern 3",                                                  // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
+			Start:                 indecies{BitIndex: 6, ByteIndex: 0},                          //   ^
+			NBits:                 9,                                                            //   ^^^ ^^^^   ^^
+			Expected:              []byte{0x24, 0x00},                                           //   001 0010   00 => 00100100 0 => 0x24 0x00
+			ExpectedConsumedBytes: 2,
 		},
 		{
-			Name:     "pattern 4",                                                  // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
-			Start:    indecies{BitIndex: 6, ByteIndex: 0},                          //   ^
-			NBits:    16,                                                           //   ^^^ ^^^^   ^^^^ ^^^^   ^
-			Expected: []byte{0x24, 0x68},                                           //   001 0010   0011 0100   0 => 0010 0100 0110 1000 => 0x24 0x68
+			Name:                  "pattern 4",                                                  // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
+			Start:                 indecies{BitIndex: 6, ByteIndex: 0},                          //   ^
+			NBits:                 16,                                                           //   ^^^ ^^^^   ^^^^ ^^^^   ^
+			Expected:              []byte{0x24, 0x68},                                           //   001 0010   0011 0100   0 => 0010 0100 0110 1000 => 0x24 0x68
+			ExpectedConsumedBytes: 3,
 		},
 		{
-			Name:     "pattern 5",                                                  // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
-			Start:    indecies{BitIndex: 6, ByteIndex: 0},                          //   ^
-			NBits:    17,                                                           //   ^^^ ^^^^   ^^^^ ^^^^   ^^
-			Expected: []byte{0x24, 0x68, 0x80},                                     //   001 0010   0011 0100   01 => 0010 0100 0110 1000 1 => 0x24 0x68 0x80
+			Name:                  "pattern 5",                                                  // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
+			Start:                 indecies{BitIndex: 6, ByteIndex: 0},                          //   ^
+			NBits:                 17,                                                           //   ^^^ ^^^^   ^^^^ ^^^^   ^^
+			Expected:              []byte{0x24, 0x68, 0x80},                                     //   001 0010   0011 0100   01 => 0010 0100 0110 1000 1 => 0x24 0x68 0x80
+			ExpectedConsumedBytes: 3,
 		},
 		{
-			Name:     "pattern 6",                                                  // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
-			Start:    indecies{BitIndex: 6, ByteIndex: 0},                          //   ^
-			NBits:    33,                                                           //   ^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^
-			Expected: []byte{0x24, 0x68, 0xac, 0xf1, 0x00},                         //   001 0010   0011 0100   0101 0110   0111 1000   10 => 0010 0100 0110 1000 1010 1100 1111 0001 0 => 0x24 0x68 0xac 0xf1 0x00
+			Name:                  "pattern 6",                                                  // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
+			Start:                 indecies{BitIndex: 6, ByteIndex: 0},                          //   ^
+			NBits:                 33,                                                           //   ^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^
+			Expected:              []byte{0x24, 0x68, 0xac, 0xf1, 0x00},                         //   001 0010   0011 0100   0101 0110   0111 1000   10 => 0010 0100 0110 1000 1010 1100 1111 0001 0 => 0x24 0x68 0xac 0xf1 0x00
+			ExpectedConsumedBytes: 5,
 		},
 		{
-			Name:     "pattern 7",                                                  // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
-			Start:    indecies{BitIndex: 6, ByteIndex: 0},                          //   ^
-			NBits:    42,                                                           //   ^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^
-			Expected: []byte{0x24, 0x68, 0xac, 0xf1, 0x35, 0x40},                   //   001 0010   0011 0100   0101 0110   0111 1000   1001 1010   101 => 0010 0100 0110 1000 1010 1100 1111 0001 0011 0101 01 => 0x24 0x68 0xac 0xf1 0x35 0x40
+			Name:                  "pattern 7",                                                  // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
+			Start:                 indecies{BitIndex: 6, ByteIndex: 0},                          //   ^
+			NBits:                 42,                                                           //   ^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^
+			Expected:              []byte{0x24, 0x68, 0xac, 0xf1, 0x35, 0x40},                   //   001 0010   0011 0100   0101 0110   0111 1000   1001 1010   101 => 0010 0100 0110 1000 1010 1100 1111 0001 0011 0101 01 => 0x24 0x68 0xac 0xf1 0x35 0x40
+			ExpectedConsumedBytes: 6,
 		},
 		{
-			Name:     "pattern 8",                                                  // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
-			Start:    indecies{BitIndex: 6, ByteIndex: 0},                          //   ^
-			NBits:    51,                                                           //   ^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^
-			Expected: []byte{0x24, 0x68, 0xac, 0xf1, 0x35, 0x79, 0xa0},             //   001 0010   0011 0100   0101 0110   0111 1000   1001 1010   1011 1100   1101 => 0010 0100 0110 1000 1010 1100 1111 0001 0011 0101 0111 1001 101 => 0x24 0x68 0xac 0xf1 0x35 0x79 0xa0
+			Name:                  "pattern 8",                                                  // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
+			Start:                 indecies{BitIndex: 6, ByteIndex: 0},                          //   ^
+			NBits:                 51,                                                           //   ^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^
+			Expected:              []byte{0x24, 0x68, 0xac, 0xf1, 0x35, 0x79, 0xa0},             //   001 0010   0011 0100   0101 0110   0111 1000   1001 1010   1011 1100   1101 => 0010 0100 0110 1000 1010 1100 1111 0001 0011 0101 0111 1001 101 => 0x24 0x68 0xac 0xf1 0x35 0x79 0xa0
+			ExpectedConsumedBytes: 7,
 		},
 		{
-			Name:     "pattern 9",                                                  // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
-			Start:    indecies{BitIndex: 6, ByteIndex: 0},                          //   ^
-			NBits:    60,                                                           //   ^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^
-			Expected: []byte{0x24, 0x68, 0xac, 0xf1, 0x35, 0x79, 0xbd, 0xe0},       //   001 0010   0011 0100   0101 0110   0111 1000   1001 1010   1011 1100   1101 1110   1111 0 => 0010 0100 0110 1000 1010 1100 1111 0001 0011 0101 0111 1001 1011 1101 1110 => 0x24 0x68 0xAC 0xF1 0x35 0x79 0xBD 0xE0
+			Name:                  "pattern 9",                                                  // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
+			Start:                 indecies{BitIndex: 6, ByteIndex: 0},                          //   ^
+			NBits:                 60,                                                           //   ^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^
+			Expected:              []byte{0x24, 0x68, 0xac, 0xf1, 0x35, 0x79, 0xbd, 0xe0},       //   001 0010   0011 0100   0101 0110   0111 1000   1001 1010   1011 1100   1101 1110   1111 0 => 0010 0100 0110 1000 1010 1100 1111 0001 0011 0101 0111 1001 1011 1101 1110 => 0x24 0x68 0xAC 0xF1 0x35 0x79 0xBD 0xE0
+			ExpectedConsumedBytes: 8,
 		},
 		{
-			Name:     "pattern 10",                                                 // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
-			Start:    indecies{BitIndex: 7, ByteIndex: 1},                          //              ^
-			NBits:    64,                                                           //              ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^
-			Expected: []byte{0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0, 0x12},       //              0011 0100   0101 0110   0111 1000   1001 1010   1011 1100   1101 1110   1111 0000   0001 0010 => 0x34 56 78 9A BC DE F0 12
+			Name:                  "pattern 10",                                                 // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
+			Start:                 indecies{BitIndex: 7, ByteIndex: 1},                          //              ^
+			NBits:                 64,                                                           //              ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^   ^^^^ ^^^^
+			Expected:              []byte{0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0, 0x12},       //              0011 0100   0101 0110   0111 1000   1001 1010   1011 1100   1101 1110   1111 0000   0001 0010 => 0x34 56 78 9A BC DE F0 12
+			ExpectedConsumedBytes: 8,
 		},
 		{
-			Name:     "pattern 11",                                                 // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
-			Start:    indecies{BitIndex: 5, ByteIndex: 0},                          //    ^
-			NBits:    17,                                                           //    ^^ ^^^^   ^^^^ ^^^^   ^^^
-			Expected: []byte{0x48, 0xd1, 0x00},                                     //    01 0010   0011 0100   010 => 0100 1000 1101 0001 0 => 0x48 0xD1 0x00
+			Name:                  "pattern 11",                                                 // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
+			Start:                 indecies{BitIndex: 5, ByteIndex: 0},                          //    ^
+			NBits:                 17,                                                           //    ^^ ^^^^   ^^^^ ^^^^   ^^^
+			Expected:              []byte{0x48, 0xd1, 0x00},                                     //    01 0010   0011 0100   010 => 0100 1000 1101 0001 0 => 0x48 0xD1 0x00
+			ExpectedConsumedBytes: 3,
 		},
 		{
-			Name:     "pattern 12",                                                 // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
-			Start:    indecies{BitIndex: 4, ByteIndex: 0},                          //     ^
-			NBits:    17,                                                           //     ^ ^^^^   ^^^^ ^^^^   ^^^^
-			Expected: []byte{0x91, 0xa2, 0x80},                                     //     1 0010   0011 0100   0101 => 1001 0001 1010 0010 1 => 0x91 0xa2 0x80
+			Name:                  "pattern 12",                                                 // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
+			Start:                 indecies{BitIndex: 4, ByteIndex: 0},                          //     ^
+			NBits:                 17,                                                           //     ^ ^^^^   ^^^^ ^^^^   ^^^^
+			Expected:              []byte{0x91, 0xa2, 0x80},                                     //     1 0010   0011 0100   0101 => 1001 0001 1010 0010 1 => 0x91 0xa2 0x80
+			ExpectedConsumedBytes: 3,
 		},
 		{
-			Name:     "pattern 13",                                                 // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
-			Start:    indecies{BitIndex: 3, ByteIndex: 0},                          //       ^
-			NBits:    17,                                                           //       ^^^^   ^^^^ ^^^^   ^^^^ ^
-			Expected: []byte{0x23, 0x45, 0x00},                                     //       0010   0011 0100   0101 0 => 0010 0011 0100 0101 0 => 0x23 0x45 0x00
+			Name:                  "pattern 13",                                                 // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
+			Start:                 indecies{BitIndex: 3, ByteIndex: 0},                          //       ^
+			NBits:                 17,                                                           //       ^^^^   ^^^^ ^^^^   ^^^^ ^
+			Expected:              []byte{0x23, 0x45, 0x00},                                     //       0010   0011 0100   0101 0 => 0010 0011 0100 0101 0 => 0x23 0x45 0x00
+			ExpectedConsumedBytes: 3,
 		},
 		{
-			Name:     "pattern 14",                                                 // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
-			Start:    indecies{BitIndex: 2, ByteIndex: 0},                          //        ^
-			NBits:    17,                                                           //        ^^^   ^^^^ ^^^^   ^^^^ ^^
-			Expected: []byte{0x46, 0x8a, 0x80},                                     //        010   0011 0100   0101 01 => 0100 0110 1000 1010 1 => 0x46 0x8a 0x80
+			Name:                  "pattern 14",                                                 // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
+			Start:                 indecies{BitIndex: 2, ByteIndex: 0},                          //        ^
+			NBits:                 17,                                                           //        ^^^   ^^^^ ^^^^   ^^^^ ^^
+			Expected:              []byte{0x46, 0x8a, 0x80},                                     //        010   0011 0100   0101 01 => 0100 0110 1000 1010 1 => 0x46 0x8a 0x80
+			ExpectedConsumedBytes: 3,
 		},
 		{
-			Name:     "pattern 15",                                                 // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
-			Start:    indecies{BitIndex: 1, ByteIndex: 0},                          //         ^
-			NBits:    17,                                                           //         ^^   ^^^^ ^^^^   ^^^^ ^^^
-			Expected: []byte{0x8d, 0x15, 0x80},                                     //         10   0011 0100   0101 011 => 1000 1101 0001 0101 1 => 0x8D 0x15 0x80
+			Name:                  "pattern 15",                                                 // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
+			Start:                 indecies{BitIndex: 1, ByteIndex: 0},                          //         ^
+			NBits:                 17,                                                           //         ^^   ^^^^ ^^^^   ^^^^ ^^^
+			Expected:              []byte{0x8d, 0x15, 0x80},                                     //         10   0011 0100   0101 011 => 1000 1101 0001 0101 1 => 0x8D 0x15 0x80
+			ExpectedConsumedBytes: 3,
 		},
 		{
-			Name:     "pattern 16",                                                 // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
-			Data:     []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
-			Start:    indecies{BitIndex: 0, ByteIndex: 0},                          //          ^
-			NBits:    17,                                                           //          ^   ^^^^ ^^^^   ^^^^ ^^^^
-			Expected: []byte{0x1a, 0x2b, 0x00},                                     //          0   0011 0100   0101 0110 => 0001 1010 0010 1011 0 => 0x1A 0x2B 0x00
+			Name:                  "pattern 16",                                                 // b7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210 | 7654 3210
+			Data:                  []byte{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12}, //  0001 0010 | 0011 0100 | 0101 0110 | 0111 1000 | 1001 1010 | 1011 1100 | 1101 1110 | 1111 0000 | 0001 0010
+			Start:                 indecies{BitIndex: 0, ByteIndex: 0},                          //          ^
+			NBits:                 17,                                                           //          ^   ^^^^ ^^^^   ^^^^ ^^^^
+			Expected:              []byte{0x1a, 0x2b, 0x00},                                     //          0   0011 0100   0101 0110 => 0001 1010 0010 1011 0 => 0x1A 0x2B 0x00
+			ExpectedConsumedBytes: 3,
 		},
 	}
 
@@ -845,7 +925,9 @@ func TestReadNBits(t *testing.T) {
 			if !reflect.DeepEqual(data.Expected, v) {
 				t.Fatalf("\nExpected: %+v\nActual:   %+v\n", data.Expected, v)
 			}
-
+			if data.ExpectedConsumedBytes != r.ConsumedBytes() {
+				t.Fatalf("\nExpected consumed bytes: %d\nActual consumed bytes:   %d\n", data.ExpectedConsumedBytes, r.ConsumedBytes())
+			}
 		})
 	}
 }
