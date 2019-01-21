@@ -125,6 +125,15 @@ func (r *Reader) ReadBit() (byte, error) {
 	return result, nil
 }
 
+// ReadBool reads a single bit from the bit stream and return it as a bool.
+func (r *Reader) ReadBool() (bool, error) {
+	b, err := r.ReadBit()
+	if err != nil {
+		return false, err
+	}
+	return b != 0, nil
+}
+
 func (r *Reader) mustReadNBitsInCurrentByte(nBits uint8) byte {
 	if nBits == 0 {
 		return 0
